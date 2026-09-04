@@ -1,0 +1,86 @@
+# CI/CD pipeline for hello-elixir
+#
+#   lint   mix format --check-formatted + mix compile on every push/MR
+#   test   mix test
+#   build  mix compile on the default branch
+#
+# Every Hex package is resolved from the private dependably registry. mix.exs
+# names the repo on every dependency and dependably_public_key.pem pins the
+# org's signing key; the token comes from the shared dependably CI/CD
+# variables that every project in the group uses:
+#   REGISTRY_URL   private registry base, e.g. https://dependably.northwardlabs.ca/
+#   REGISTRY_KEY   read-only token for that registry (masked)
+# The job HARD-FAILS when either is empty rather than silently falling back to
+# hex.pm, and refuses to run when REGISTRY_URL names a different host than the
+# one pinned below, so the key in the repo always matches the registry.
+
+stages:
+  - lint
+  - test
+  - build
+
+image: ${DEP_IMAGE_REGISTRY}/library/elixir:latest
+
+variables:
+  DEP_IMAGE_REGISTRY: "dependably.northwardlabs.ca"
+  # The registry URL the pinned signing key belongs to. Compared against
+  # REGISTRY_URL in registry_setup so the two cannot drift apart.
+  DEPENDABLY_HEX_URL: "https://dependably.northwardlabs.ca/hex"
+  MIX_ENV: "test"
+
+cache:
+  paths:
+    - deps/
+    - _build/
+
+# Registers the dependably repo in Mix's per-user Hex config from REGISTRY_KEY.
+# `mix hex.repo add` writes the URL, pinned public key, and token to
+# ~/.hex/hex.config, which is how the token stays out of the repository.
+# Mirrors the REGISTRY_URL/REGISTRY_KEY wiring in the other projects' pipelines.
+#
+# `mix local.hex` / `mix local.rebar` install the Hex client and rebar3 build
+# tool themselves; they are not packages and do not go through the registry.
+.registry_setup: &registry_setup |
+  if [ -z "${REGISTRY_URL:-}" ] || [ -z "${REGISTRY_KEY:-}" ]; then
+    echo "ERROR: REGISTRY_URL/REGISTRY_KEY are empty - refusing to resolve Hex packages without the private registry." >&2
+    exit 1
+  fi
+  expected="${REGISTRY_URL%/}/hex"
+  if [ "$DEPENDABLY_HEX_URL" != "$expected" ]; then
+    echo "ERROR: .gitlab-ci.yml pins $DEPENDABLY_HEX_URL but REGISTRY_URL resolves to $expected." >&2
+    exit 1
+  fi
+  mix local.hex --force
+  mix local.rebar --force
+  mix hex.repo add dependably "$DEPENDABLY_HEX_URL" \
+    --public-key dependably_public_key.pem \
+    --auth-key "$REGISTRY_KEY"
+  mix deps.get
+
+default:
+  before_script:
+    - *registry_setup
+
+linting:
+  stage: lint
+  script:
+    - mix format --check-formatted
+    - mix compile --warnings-as-errors
+
+unit_tests:
+  stage: test
+  script:
+    - mix test
+  artifacts:
+    when: always
+    expire_in: 1 week
+
+build_project:
+  stage: build
+  variables:
+    MIX_ENV: "prod"
+  script:
+    - mix compile --warnings-as-errors
+  only:
+    - main
+    - master
