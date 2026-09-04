@@ -1,8 +1,12 @@
 # CI/CD pipeline for hello-elixir
 #
-#   lint   mix format --check-formatted + mix compile on every push/MR
-#   test   mix test
-#   build  mix compile on the default branch
+#   lint   mix format --check-formatted, mix compile, mix credo, mix docs (MIX_ENV=dev)
+#   test   mix test (MIX_ENV=test: mox + a local plug_cowboy server)
+#   build  mix compile (MIX_ENV=prod) on the default branch
+#
+# Dev-only deps (credo, ex_doc, ymlr) exist only under MIX_ENV=dev, and
+# test-only deps (mox, plug_cowboy) only under MIX_ENV=test, so each stage
+# sets the MIX_ENV it needs. `mix deps.get` fetches every scope regardless.
 #
 # Every Hex package is resolved from the private dependably registry. mix.exs
 # names the repo on every dependency and dependably_public_key.pem pins the
@@ -63,9 +67,19 @@ default:
 
 linting:
   stage: lint
+  variables:
+    MIX_ENV: "dev"
   script:
     - mix format --check-formatted
     - mix compile --warnings-as-errors
+    - mix credo --strict
+    - mix docs
+    - mix hello.manifest
+  artifacts:
+    paths:
+      - doc/
+      - deps-manifest.yaml
+    expire_in: 1 week
 
 unit_tests:
   stage: test

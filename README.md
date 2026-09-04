@@ -8,16 +8,46 @@ It is the Elixir/Mix counterpart of the sibling `hello_erlang` (Erlang/rebar3) p
 - **Logging**: Uses the built-in `Logger`.
 - **HTTP Client**: Includes `httpoison` (which wraps `hackney`).
 - **JWS Signing**: Uses `jose` to sign the greeting as a JSON Web Signature.
-- **Testing**: Uses `ExUnit`, including doctests.
+- **Testing**: Uses `ExUnit` with doctests, `mox` for mocking the HTTP client, and a local
+  `plug_cowboy` server for one end-to-end test.
+- **Dev tooling**: `credo` (lint), `ex_doc` (docs), and `ymlr` (the `mix hello.manifest` task).
 
-## Deliberately vulnerable dependency
+## Dependency scopes
 
-`jose` is pinned to exactly `1.11.6`, a release with a published advisory
-(CVE-2023-50966 / GHSA-9mg4-v392-8j68, a denial of service via a large PBES2 `p2c`
-value, fixed in 1.11.7). This is intentional: the project exists to demonstrate the
-dependably vulnerability scanner, and this pin gives it something to catch. Nothing in
-the project calls the affected PBES2 code path. Do not "fix" the pin without also
-updating this note. Hex's own audit shows the same finding:
+Mix has no separate dev/prod dependency sections. Each entry in `mix.exs` carries an
+`only:` option that limits it to one or more environments, and `runtime: false` keeps
+build-time tools out of the application start list.
+
+| Scope | Packages | Available when |
+|---|---|---|
+| prod (all envs) | `jason`, `httpoison`, `jose` | always, including releases |
+| dev only | `credo`, `ex_doc`, `ymlr` | `MIX_ENV=dev` |
+| test only | `mox`, `plug_cowboy` | `MIX_ENV=test` |
+
+`mix deps.tree --only prod` shows what actually ships. Every dependency is fetched and
+recorded in `mix.lock` regardless of scope.
+
+## Deliberately vulnerable dependencies
+
+This project exists to demonstrate the dependably vulnerability scanner, so one package in
+each scope is pinned to a release with a published advisory. Nothing in the project calls
+the affected code paths. Do not "fix" these pins without also updating this table.
+
+| Scope | Package | Advisory | Fixed in |
+|---|---|---|---|
+| prod | `jose 1.11.6` | CVE-2023-50966 / GHSA-9mg4-v392-8j68, DoS via a large PBES2 `p2c` value | 1.11.7 |
+| dev | `ymlr 5.1.5` | CVE-2026-65636, YAML injection via unescaped newlines in comments | 5.1.6 |
+| test | `plug_cowboy 2.8.0` | CVE-2026-32688 / GHSA-q8x4-x7mp-5vg2, atom table exhaustion via HTTP/2 `:scheme` | 2.8.1 |
+
+`hackney 1.25.0`, pulled in by `httpoison`, also carries several 2026 advisories. That one is
+incidental: every hackney 1.x is affected and the fix is only in hackney 4.x, which needs
+`httpoison ~> 3.0`.
+
+The first choice for the dev scope was `earmark`, which is retired on Hex. The registry
+refused it outright with `Blocked by policy (Deprecated)`, which is itself a useful thing to
+see the registry do.
+
+Hex's own audit shows the same findings:
 
 ```bash
 mix hex.audit
@@ -87,7 +117,14 @@ Verify the project is working correctly using the ExUnit test suite:
 mix test
 ```
 
-### 6. Run the Demo
+### 6. Lint and Docs (dev only)
+```bash
+MIX_ENV=dev mix credo --strict
+MIX_ENV=dev mix docs
+MIX_ENV=dev mix hello.manifest   # writes deps-manifest.yaml
+```
+
+### 7. Run the Demo
 You can run the demo module directly:
 ```bash
 mix run -e 'HelloWorld.Demo.run()'
@@ -104,7 +141,8 @@ HelloWorld.Demo.run()
 ```
 
 ## Project Structure
-- `lib/`: Source code (`.ex` files)
+- `lib/`: Source code (`.ex` files); `lib/mix/tasks/` holds the dev-only Mix task
+- `config/`: Runtime config; tests swap the HTTP client for a Mox mock here
 - `test/`: Test suites (`.exs` files using ExUnit)
 - `mix.exs`: Project configuration and dependencies
 - `mix.lock`: Locked dependency versions and checksums

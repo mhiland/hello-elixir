@@ -7,7 +7,8 @@ defmodule HelloWorld.MixProject do
       version: "0.1.0",
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      docs: [main: "readme", extras: ["README.md"]]
     ]
   end
 
@@ -30,16 +31,41 @@ defmodule HelloWorld.MixProject do
   # No credential lives here. The token goes in ~/.hex/hex.config via
   # `mix hex.repo add`; CI writes it from the shared REGISTRY_KEY variable
   # (see .gitlab-ci.yml).
+  #
+  # Scopes: deps without `only:` ship in every env including prod releases.
+  # `only: :dev` / `only: :test` deps are fetched and locked in every env but
+  # excluded from the tree elsewhere; `runtime: false` keeps build-time tools
+  # out of the application start list.
+  #
+  # Three deps are deliberately pinned to releases with published advisories,
+  # one per scope, so the dependably vulnerability scanner has something to
+  # catch in each. Exact pins keep `mix deps.update` from quietly moving off
+  # them. See "Deliberately vulnerable dependencies" in README.md.
   defp deps do
     [
+      # --- prod (every env) ---
       {:jason, "~> 1.4", repo: "dependably"},
       {:httpoison, "~> 2.2", repo: "dependably"},
-      # Deliberately pinned to a release with a known, published advisory
-      # (CVE-2023-50966 / GHSA-9mg4-v392-8j68: denial of service via a large
-      # PBES2 p2c value, fixed in 1.11.7) so the dependably vulnerability
-      # scanner has something to catch. The exact pin keeps `mix deps.update`
-      # from quietly moving off it. Nothing here uses the affected PBES2 path.
-      {:jose, "== 1.11.6", repo: "dependably"}
+      # VULNERABLE ON PURPOSE (prod): CVE-2023-50966 / GHSA-9mg4-v392-8j68,
+      # denial of service via a large PBES2 p2c value, fixed in 1.11.7.
+      # Nothing here uses the affected PBES2 path.
+      {:jose, "== 1.11.6", repo: "dependably"},
+
+      # --- dev only ---
+      {:credo, "~> 1.7", only: :dev, runtime: false, repo: "dependably"},
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false, repo: "dependably"},
+      # VULNERABLE ON PURPOSE (dev): EEF-CVE-2026-65636 / CVE-2026-65636, YAML
+      # injection via unescaped newlines in document comments, fixed in 5.1.6.
+      # Only used by the `mix hello.manifest` dev task. (earmark was the first
+      # choice, but the registry blocks it: "Blocked by policy (Deprecated)".)
+      {:ymlr, "== 5.1.5", only: :dev, runtime: false, repo: "dependably"},
+
+      # --- test only ---
+      {:mox, "~> 1.3", only: :test, repo: "dependably"},
+      # VULNERABLE ON PURPOSE (test): GHSA-q8x4-x7mp-5vg2 / CVE-2026-32688,
+      # atom table exhaustion via the HTTP/2 :scheme pseudo-header, fixed in
+      # 2.8.1. Only serves the local HTTP/1.1 test server in fetcher tests.
+      {:plug_cowboy, "== 2.8.0", only: :test, repo: "dependably"}
     ]
   end
 end
