@@ -2,7 +2,7 @@
 #
 #   lint   mix format --check-formatted, mix compile, mix credo, mix docs (MIX_ENV=dev)
 #   test   mix test (MIX_ENV=test: mox + a local plug_cowboy server)
-#   build  mix compile (MIX_ENV=prod) on the default branch
+#   build  mix compile (MIX_ENV=prod) on every push/MR
 #
 # Dev-only deps (credo, ex_doc, ymlr) exist only under MIX_ENV=dev, and
 # test-only deps (mox, plug_cowboy) only under MIX_ENV=test, so each stage
@@ -95,6 +95,3 @@ build_project:
     MIX_ENV: "prod"
   script:
     - mix compile --warnings-as-errors
-  only:
-    - main
-    - master
