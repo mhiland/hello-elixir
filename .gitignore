@@ -25,3 +25,7 @@ hello_world-*.tar
 
 # Output of the dev-only `mix hello.manifest` task.
 deps-manifest.yaml
+
+# CI sbom stage outputs.
+bom*.cdx.json
+results.sarif

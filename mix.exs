@@ -54,6 +54,8 @@ defmodule HelloWorld.MixProject do
       # --- dev only ---
       {:credo, "~> 1.7", only: :dev, runtime: false, repo: "dependably"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false, repo: "dependably"},
+      # CycloneDX SBOM generator (`mix sbom.cyclonedx`), consumed by the CI sbom stage.
+      {:sbom, "~> 0.10", only: :dev, runtime: false, repo: "dependably"},
       # VULNERABLE ON PURPOSE (dev): EEF-CVE-2026-65636 / CVE-2026-65636, YAML
       # injection via unescaped newlines in document comments, fixed in 5.1.6.
       # Only used by the `mix hello.manifest` dev task. (earmark was the first

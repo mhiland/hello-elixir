@@ -10,7 +10,7 @@ It is the Elixir/Mix counterpart of the sibling `hello_erlang` (Erlang/rebar3) p
 - **JWS Signing**: Uses `jose` to sign the greeting as a JSON Web Signature.
 - **Testing**: Uses `ExUnit` with doctests, `mox` for mocking the HTTP client, and a local
   `plug_cowboy` server for one end-to-end test.
-- **Dev tooling**: `credo` (lint), `ex_doc` (docs), and `ymlr` (the `mix hello.manifest` task).
+- **Dev tooling**: `credo` (lint), `ex_doc` (docs), `ymlr` (the `mix hello.manifest` task), and `sbom` (CycloneDX SBOM).
 
 ## Dependency scopes
 
@@ -21,7 +21,7 @@ build-time tools out of the application start list.
 | Scope | Packages | Available when |
 |---|---|---|
 | prod (all envs) | `jason`, `httpoison`, `jose` | always, including releases |
-| dev only | `credo`, `ex_doc`, `ymlr` | `MIX_ENV=dev` |
+| dev only | `credo`, `ex_doc`, `ymlr`, `sbom` | `MIX_ENV=dev` |
 | test only | `mox`, `plug_cowboy` | `MIX_ENV=test` |
 
 `mix deps.tree --only prod` shows what actually ships. Every dependency is fetched and
@@ -51,6 +51,32 @@ Hex's own audit shows the same findings:
 
 ```bash
 mix hex.audit
+```
+
+## SBOM, reachability, and upload to dependably
+
+The CI `sbom` stage produces a CycloneDX 1.6 SBOM with `mix sbom.cyclonedx`, normalizes it
+with `scripts/sbom_tool.py` (bare Hex purls, dev/test scopes kept), enriches it with the
+advisories the dependably registry already knows for each package, and runs
+[sbom-reach](https://gitlab.northwardlabs.ca/moonlitlabs/sbom-reachability) over it to produce
+SARIF. The `publish` stage then PUTs the SBOM and the SARIF to dependably's projects plane
+as project `hello-elixir`, version = tag or branch slug.
+
+Two limits to know about:
+
+- sbom-reach has no Hex analyzer, so every SARIF result carries reachability `unknown`.
+  What the SARIF adds over the SBOM is the advisory list and the dev/test scope per finding.
+- The upload needs `DEPENDABLY_SBOM_TOKEN`, a dependably API token with only the
+  `sbom:upload` capability, set as a masked and protected CI/CD variable. The read-only
+  registry key cannot upload.
+
+To reproduce locally (needs `REGISTRY_URL` and `REGISTRY_KEY` in the environment):
+
+```bash
+MIX_ENV=dev mix sbom.cyclonedx -o bom.raw.cdx.json -f
+python3 scripts/sbom_tool.py mix-normalize bom.raw.cdx.json bom.cdx.json
+python3 scripts/sbom_tool.py enrich bom.cdx.json bom.vulns.cdx.json
+sbom-reach analyze --sbom bom.vulns.cdx.json --src . --fail-on none -o results.sarif
 ```
 
 ## Prerequisites
@@ -146,4 +172,5 @@ HelloWorld.Demo.run()
 - `test/`: Test suites (`.exs` files using ExUnit)
 - `mix.exs`: Project configuration and dependencies
 - `mix.lock`: Locked dependency versions and checksums
+- `scripts/sbom_tool.py`: SBOM normalize/enrich helper used by CI
 - `dependably_public_key.pem`: Pinned signing key of the private registry
